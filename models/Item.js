@@ -44,12 +44,10 @@ const itemSchema = new mongoose.Schema({
       ref: "Activity",
     },
   ],
-  categoryId: [
-    {
-      type: ObjectId,
-      ref: "Category",
-    },
-  ],
+  categoryId: {
+    type: ObjectId,
+    ref: "Category",
+  },
 });
 
 module.exports = mongoose.model("Item", itemSchema);
