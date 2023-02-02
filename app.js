@@ -24,6 +24,7 @@ var app = express();
 
 // router admin
 const adminRouter = require("./routes/admin");
+const apiRouter = require("./routes/api");
 
 // view engine setup
 app.set("views", path.join(__dirname, "views"));
@@ -54,6 +55,7 @@ app.use("/", indexRouter);
 app.use("/users", usersRouter);
 // admin
 app.use("/admin", adminRouter);
+app.use("/api/v1/member", apiRouter);
 
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {

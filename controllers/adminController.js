@@ -2,14 +2,76 @@ const Category = require("../models/Category");
 const Bank = require("../models/Bank");
 const Item = require("../models/Item");
 const Image = require("../models/Image");
+const Feature = require("../models/Feature");
+const Activity = require("../models/Activity");
+const Users = require("../models/Users");
+const Booking = require("../models/Booking");
+const Member = require("../models/Member");
 const fs = require("fs-extra");
 const path = require("path");
+const bcrypt = require("bcryptjs");
 
 module.exports = {
-  viewDashboard: (req, res) => {
-    res.render("admin/dashboard/view_dashboard.ejs", {
-      title: "Staycation | Dashboard",
-    });
+  viewSignin: async (req, res) => {
+    try {
+      const alertMessage = req.flash("alertMessage");
+      const alertStatus = req.flash("alertStatus");
+      const alert = { message: alertMessage, status: alertStatus };
+      if (req.session.user == null || req.session.user == undefined) {
+        res.render("index.ejs", {
+          alert,
+          title: "Staycation | Login",
+        });
+      } else {
+        res.redirect("/admin/dashboard");
+      }
+    } catch (error) {
+      res.redirect("/admin/signin");
+    }
+  },
+  actionSignin: async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      const user = await Users.findOne({ username });
+      if (!user) {
+        req.flash("alertMessage", "User yang anda masukan tidak valid!!");
+        req.flash("alertStatus", "danger");
+        res.redirect("/admin/signin");
+      }
+      const isPasswordMatch = await bcrypt.compare(password, user.password);
+      if (!isPasswordMatch) {
+        req.flash("alertMessage", "Password yang anda masukan tidak valid!!");
+        req.flash("alertStatus", "danger");
+        res.redirect("/admin/signin");
+      }
+      req.session.user = {
+        id: user.id,
+        username: user.username,
+      };
+      res.redirect("/admin/dashboard");
+    } catch (error) {
+      res.redirect("/admin/signin");
+    }
+  },
+  actionLogout: (req, res) => {
+    req.session.destroy();
+    res.redirect("/admin/signin");
+  },
+  viewDashboard: async (req, res) => {
+    try {
+      const member = await Member.find();
+      const booking = await Booking.find();
+      const item = await Item.find();
+      res.render("admin/dashboard/view_dashboard.ejs", {
+        title: "Staycation | Dashboard",
+        user: req.session.user,
+        member,
+        booking,
+        item,
+      });
+    } catch (error) {
+      res.redirect("/admin/dashboard");
+    }
   },
   viewCategory: async (req, res) => {
     try {
@@ -21,6 +83,7 @@ module.exports = {
         category,
         alert,
         title: "Staycation | Category",
+        user: req.session.user,
       });
     } catch (error) {
       res.redirect("/admin/category");
@@ -78,6 +141,7 @@ module.exports = {
         title: "Staycation | Bank",
         alert,
         bank,
+        user: req.session.user,
       });
     } catch (error) {
       req.flash("alertMessage", `${error.message}`);
@@ -168,6 +232,7 @@ module.exports = {
         alert,
         item,
         action: "view",
+        user: req.session.user,
       });
     } catch (error) {
       req.flash("alertMessage", `${error.message}`);
@@ -223,6 +288,7 @@ module.exports = {
         action: "Show Image",
         alert,
         item,
+        user: req.session.user,
       });
     } catch (error) {
       req.flash("alertMessage", `${error.message}`);
@@ -250,6 +316,7 @@ module.exports = {
         category,
         item,
         action: "edit",
+        user: req.session.user,
       });
     } catch (error) {
       req.flash("alertMessage", `${error.message}`);
@@ -327,9 +394,245 @@ module.exports = {
       res.redirect("/admin/item");
     }
   },
-  viewBooking: (req, res) => {
-    res.render("admin/booking/view_booking.ejs", {
-      title: "Staycation | Booking",
-    });
+  viewDetailItem: async (req, res) => {
+    const { itemId } = req.params;
+    try {
+      const alertMessage = req.flash("alertMessage");
+      const alertStatus = req.flash("alertStatus");
+      const alert = { message: alertMessage, status: alertStatus };
+
+      const feature = await Feature.find({ itemId });
+      const activity = await Activity.find({ itemId });
+
+      res.render("admin/item/detail_item/view_detail_item.ejs", {
+        title: "Staycation | Detail Item",
+        alert,
+        itemId,
+        feature,
+        activity,
+        user: req.session.user,
+      });
+    } catch (error) {
+      req.flash("alertMessage", `${error.message}`);
+      req.flash("alertStatus", "danger");
+      res.redirect(`/admin/item/show-detail-item/${itemId}`);
+    }
+  },
+  addFeature: async (req, res) => {
+    const { name, qty, itemId } = req.body;
+    try {
+      if (!req.file) {
+        req.flash("alertMessage", "Image Not Found");
+        req.flash("alertStatus", "danger");
+        res.redirect(`/admin/item/show-detail-item/${itemId}`);
+      }
+      const feature = await Feature.create({
+        name,
+        qty,
+        itemId,
+        imageUrl: `images/${req.file.filename}`, // mengambil filenamenya dengan multer
+      });
+      const item = await Item.findOne({ _id: itemId });
+      item.featureId.push({ _id: feature._id });
+      await item.save();
+      req.flash("alertMessage", "Success Add Feature");
+      req.flash("alertStatus", "success");
+      res.redirect(`/admin/item/show-detail-item/${itemId}`);
+    } catch (error) {
+      req.flash("alertMessage", `${error.message}`);
+      req.flash("alertStatus", "danger");
+      res.redirect(`/admin/item/show-detail-item/${itemId}`);
+    }
+  },
+  editFeature: async (req, res) => {
+    const { id, name, qty, itemId } = req.body;
+    try {
+      const feature = await Feature.findOne({ _id: id });
+      if (req.file == undefined) {
+        feature.name = name;
+        feature.qty = qty;
+        await feature.save();
+        req.flash("alertMessage", "Success Update Feature");
+        req.flash("alertStatus", "success");
+        res.redirect(`/admin/item/show-detail-item/${itemId}`);
+      } else {
+        await fs.unlink(path.join(`public/${feature.imageUrl}`));
+        feature.name = name;
+        feature.qty = qty;
+        feature.imageUrl = `images/${req.file.filename}`;
+        await feature.save();
+        req.flash("alertMessage", "Success Update Feature");
+        req.flash("alertStatus", "success");
+        res.redirect(`/admin/item/show-detail-item/${itemId}`);
+      }
+    } catch (error) {
+      req.flash("alertMessage", `${error.message}`);
+      req.flash("alertStatus", "danger");
+      res.redirect(`/admin/item/show-detail-item/${itemId}`);
+    }
+  },
+  deleteFeature: async (req, res) => {
+    const { id, itemId } = req.params;
+    try {
+      const feature = await Feature.findOne({ _id: id });
+      const item = await Item.findOne({ _id: itemId }).populate("featureId");
+      // loop semua data featureid yang ada di Item
+      for (let i = 0; i < item.featureId.length; i++) {
+        // featureid di Item harus sesuai dengan id Feature
+        if (item.featureId[i]._id.toString() === feature._id.toString()) {
+          // delete featureId di Item dengan id Feature
+          item.featureId.pull({ _id: feature._id });
+          await item.save();
+        }
+      }
+      await fs.unlink(path.join(`public/${feature.imageUrl}`));
+      await feature.remove();
+      req.flash("alertMessage", "Success Delete Feature");
+      req.flash("alertStatus", "success");
+      res.redirect(`/admin/item/show-detail-item/${itemId}`);
+    } catch (error) {
+      req.flash("alertMessage", `${error.message}`);
+      req.flash("alertStatus", "danger");
+      res.redirect(`/admin/item/show-detail-item/${itemId}`);
+    }
+  },
+  addActivity: async (req, res) => {
+    const { name, type, itemId } = req.body;
+    try {
+      if (!req.file) {
+        req.flash("alertMessage", "Image Not Found");
+        req.flash("alertStatus", "danger");
+        res.redirect(`/admin/item/show-detail-item/${itemId}`);
+      }
+      const activity = await Activity.create({
+        name,
+        type,
+        itemId,
+        imageUrl: `images/${req.file.filename}`, // mengambil filenamenya dengan multer
+      });
+      const item = await Item.findOne({ _id: itemId });
+      item.activityId.push({ _id: activity._id });
+      await item.save();
+      req.flash("alertMessage", "Success Add Activity");
+      req.flash("alertStatus", "success");
+      res.redirect(`/admin/item/show-detail-item/${itemId}`);
+    } catch (error) {
+      req.flash("alertMessage", `${error.message}`);
+      req.flash("alertStatus", "danger");
+      res.redirect(`/admin/item/show-detail-item/${itemId}`);
+    }
+  },
+  editActivity: async (req, res) => {
+    const { id, name, type, itemId } = req.body;
+    try {
+      const activity = await Activity.findOne({ _id: id });
+      if (req.file == undefined) {
+        activity.name = name;
+        activity.type = type;
+        await activity.save();
+        req.flash("alertMessage", "Success Update Activity");
+        req.flash("alertStatus", "success");
+        res.redirect(`/admin/item/show-detail-item/${itemId}`);
+      } else {
+        await fs.unlink(path.join(`public/${activity.imageUrl}`));
+        activity.name = name;
+        activity.type = type;
+        activity.imageUrl = `images/${req.file.filename}`;
+        await activity.save();
+        req.flash("alertMessage", "Success Update Activity");
+        req.flash("alertStatus", "success");
+        res.redirect(`/admin/item/show-detail-item/${itemId}`);
+      }
+    } catch (error) {
+      console.log(error);
+      req.flash("alertMessage", `${error.message}`);
+      req.flash("alertStatus", "danger");
+      res.redirect(`/admin/item/show-detail-item/${itemId}`);
+    }
+  },
+  deleteActivity: async (req, res) => {
+    const { id, itemId } = req.params;
+    try {
+      const activity = await Activity.findOne({ _id: id });
+      const item = await Item.findOne({ _id: itemId }).populate("activityId");
+      // loop semua data activityid yang ada di Item
+      for (let i = 0; i < item.activityId.length; i++) {
+        // activityid di Item harus sesuai dengan id Activity
+        if (item.activityId[i]._id.toString() === activity._id.toString()) {
+          // delete activityId di Item dengan id activity
+          item.activityId.pull({ _id: activity._id });
+          await item.save();
+        }
+      }
+      await fs.unlink(path.join(`public/${activity.imageUrl}`));
+      await activity.remove();
+      req.flash("alertMessage", "Success Delete Activity");
+      req.flash("alertStatus", "success");
+      res.redirect(`/admin/item/show-detail-item/${itemId}`);
+    } catch (error) {
+      req.flash("alertMessage", `${error.message}`);
+      req.flash("alertStatus", "danger");
+      res.redirect(`/admin/item/show-detail-item/${itemId}`);
+    }
+  },
+  viewBooking: async (req, res) => {
+    try {
+      const booking = await Booking.find()
+        .populate("memberId")
+        .populate("bankId");
+
+      res.render("admin/booking/view_booking.ejs", {
+        title: "Staycation | Booking",
+        user: req.session.user,
+        booking,
+      });
+    } catch (error) {
+      res.redirect("/admin/booking");
+    }
+  },
+  showDetailBooking: async (req, res) => {
+    const { id } = req.params;
+    try {
+      const booking = await Booking.findOne({ _id: id })
+        .populate("memberId")
+        .populate("bankId");
+      const alertMessage = req.flash("alertMessage");
+      const alertStatus = req.flash("alertStatus");
+      const alert = { message: alertMessage, status: alertStatus };
+      res.render("admin/booking/show_detail_booking.ejs", {
+        title: "Staycation | Detail Booking",
+        user: req.session.user,
+        booking,
+        alert,
+      });
+    } catch (error) {
+      res.redirect("/admin/booking");
+    }
+  },
+  actionConfirmation: async (req, res) => {
+    const { id } = req.params;
+    try {
+      const booking = await Booking.findOne({ _id: id });
+      booking.payments.status = "Accept";
+      await booking.save();
+      req.flash("alertMessage", "Success Confirmation Payment");
+      req.flash("alertStatus", "success");
+      res.redirect(`/admin/booking/${id}`);
+    } catch (error) {
+      res.redirect(`/admin/booking/${id}`);
+    }
+  },
+  actionReject: async (req, res) => {
+    const { id } = req.params;
+    try {
+      const booking = await Booking.findOne({ _id: id });
+      booking.payments.status = "Reject";
+      await booking.save();
+      req.flash("alertMessage", "Success Reject Payment");
+      req.flash("alertStatus", "success");
+      res.redirect(`/admin/booking/${id}`);
+    } catch (error) {
+      res.redirect(`/admin/booking/${id}`);
+    }
   },
 };
