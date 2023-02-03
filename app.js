@@ -10,12 +10,15 @@ const flash = require("connect-flash");
 // import mongoose
 
 const mongoose = require("mongoose");
-mongoose.connect("mongodb://127.0.0.1:27017/db_mern", {
-  useNewUrlParser: true,
-  useCreateIndex: true,
-  useFindAndModify: false,
-  useUnifiedTopology: true,
-});
+mongoose.connect(
+  "mongodb+srv://db_athome:bwamern@cluster0.ttjzjol.mongodb.net/db_staycation",
+  {
+    useNewUrlParser: true,
+    useCreateIndex: true,
+    useFindAndModify: false,
+    useUnifiedTopology: true,
+  }
+);
 
 var indexRouter = require("./routes/index");
 var usersRouter = require("./routes/users");
